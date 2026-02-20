@@ -1,0 +1,252 @@
+fclose(s);
+clear
+clc
+
+%% filter
+passband = 10; %cut-off frequency
+fs = 410;  %sampling rate
+% lowFilt = designfilt('lowpassiir','FilterOrder',12, ...
+%          'PassbandFrequency',passband,'PassbandRipple',0.2, ...
+%          'SampleRate',fs);     
+Ap = 0.01;      
+Ast = 80;
+
+lowFilt_iir = dsp.LowpassFilter('SampleRate',fs,...
+    'FilterType','IIR',...
+    'DesignForMinimumOrder',false,...
+    'FilterOrder',10,...
+    'PassbandFrequency',passband,...
+    'PassbandRipple',Ap,...
+    'StopbandAttenuation',Ast);
+
+lowFilt = dsp.LowpassFilter('SampleRate',fs,...
+    'DesignForMinimumOrder',false,'FilterOrder',50,...
+    'PassbandFrequency', passband,...
+    'PassbandRipple',Ap,'StopbandAttenuation',Ast);
+
+npFilter = dsp.NotchPeakFilter('CenterFrequency',50,'Bandwidth',4, ...
+    'SampleRate',410);
+
+movAvg = dsp.MovingAverage(20);
+
+fc = 10;
+fs = 410;
+N = 2; %2nd order butterworth filter
+
+[b,a] = butter(N,fc/(fs/2)); %butterworth transfer fun
+
+% freqz(b,a,[],fs)
+
+
+
+% fvtool(lowFilt, lowFilt_iir, 'Fs', fs)
+% fvtool(npFilter, 'Fs', fs)
+% fvtool(npFilter, 'Fs', fs)
+
+
+filt = npFilter; 
+%% Initialization USB
+
+s = serialport('COM5', 115200);
+
+numBytes = 12;
+bufferTime = 1; % in second
+
+s.InputBufferSize = numBytes*fs*bufferTime;
+s.Timeout = 30;
+
+% Parameter Initialization
+time = [];
+
+% SYSTEM TIME
+sysTime = [];
+
+
+% raw data (buffer)
+rawC1_buffer = [];
+rawC2_buffer = [];
+rawC3_buffer = [];
+rawC4_buffer = [];
+
+% raw data set
+rawC1 = [];
+rawC2 = [];
+rawC3 = [];
+rawC4 = [];
+
+% filt data set
+filtC1 = [];
+filtC2 = [];
+filtC3 = [];
+filtC4 = [];
+
+% loop Configuration
+acquisition_time = 1000; % total reading data time in seconds
+
+figure()
+
+bound = 4;
+
+Vmax = 1;
+Vmin = -0.5;
+windowLen = 5;  % window frame (s)
+ax1 = subplot(2,2,1);
+h1 = animatedline;
+axis([0, windowLen, Vmin, Vmax])
+xlabel('Time (s)')
+ylabel('Amplitude (V)')
+title('Channel 1')
+set(gca,'FontSize',18);
+ax2 = subplot(2,2,2);
+h2 = animatedline;
+axis([0, windowLen, Vmin, Vmax])
+xlabel('Time (s)')
+ylabel('Amplitude (V)')
+title('Channel 2')
+set(gca,'FontSize',18);
+ax3 = subplot(2,2,3);
+h3 = animatedline;
+axis([0, windowLen, Vmin, Vmax])
+xlabel('Time (s)')
+ylabel('Amplitude (V)')
+title('Channel 3')
+set(gca,'FontSize',18);
+ax4 = subplot(2,2,4);
+h4 = animatedline;
+axis([0, windowLen, Vmin, Vmax])
+xlabel('Time (s)')
+ylabel('Amplitude (V)')
+title('Channel 4')
+set(gca,'FontSize',18);
+
+% number of prior buffer time to load at each T
+numBuffer2Load = 1;
+
+% number of sample to ignore
+numRemove = 30;
+
+% loop running
+tic; % get current system time
+timestamp = tic;
+elapse = toc; %tic-toc duration time
+T = 0;   % integer of elapse time
+
+flush(s)
+while elapse<acquisition_time
+    elapse = toc;
+        % initial toc of the loop
+    if T == 0
+        initial_toc = elapse;
+    end
+    % acquire 1s of data
+    in = fread(s,numBytes*fs*bufferTime,'uint8');
+    % divide the raw data vector into the 4 channels
+    [rawC1_buffer,rawC2_buffer,rawC3_buffer,rawC4_buffer] = get_data(in);
+
+%     rawC1_buffer = rawC1_buffer(100:end-100);
+%     rawC2_buffer = rawC2_buffer(100:end-100);
+%     rawC3_buffer = rawC3_buffer(100:end-100);
+%     rawC4_buffer = rawC4_buffer(100:end-100);
+%     
+    rawC1 = vertcat(rawC1,rawC1_buffer);
+    rawC2 = vertcat(rawC2,rawC2_buffer);
+    rawC3 = vertcat(rawC3,rawC3_buffer);
+    rawC4 = vertcat(rawC4,rawC4_buffer);
+    
+    bufferSize = length(rawC1_buffer);
+    bufferSize1 = bufferSize - numRemove;
+    % figure plot
+    tvec = (T:1/bufferSize1:T+1-1/bufferSize1)';
+    if T <= numBuffer2Load-1
+        yvec_C1 = filter(b, a, rawC1);
+        yvec_C2 = filter(b, a, rawC2);
+        yvec_C3 = filter(b, a, rawC3);
+        yvec_C4 = filter(b, a, rawC4);
+
+        yvec_C1 = yvec_C1(31:end);
+        yvec_C2 = yvec_C2(31:end);
+        yvec_C3 = yvec_C3(31:end);
+        yvec_C4 = yvec_C4(31:end);
+
+%         yvec_C1 = filt(rawC1);
+%         yvec_C2 = filt(rawC2);
+%         yvec_C3 = filt(rawC3);
+%         yvec_C4 = filt(rawC4);
+
+
+        addpoints(h1,tvec,yvec_C1(T*bufferSize1+1:end))
+        addpoints(h2,tvec,yvec_C2(T*bufferSize1+1:end))
+        addpoints(h3,tvec,yvec_C3(T*bufferSize1+1:end))
+        addpoints(h4,tvec,yvec_C4(T*bufferSize1+1:end))
+        filtC1 = vertcat(filtC1,yvec_C1(T*bufferSize1+1:end));
+        filtC2 = vertcat(filtC2,yvec_C2(T*bufferSize1+1:end));
+        filtC3 = vertcat(filtC3,yvec_C3(T*bufferSize1+1:end));
+        filtC4 = vertcat(filtC4,yvec_C4(T*bufferSize1+1:end));
+
+    else
+
+        temp = rawC1(end-(numBuffer2Load+1)*bufferSize+1:end); % get raw signal of last two buffer time
+%         yvec_C1 = filt(temp);
+        yvec_C1 = filter(b, a,temp);
+        temp = rawC2(end-(numBuffer2Load+1)*bufferSize+1:end);
+%         yvec_C2 = filt(temp);
+        yvec_C2 = filter(b, a, temp);
+        temp = rawC3(end-(numBuffer2Load+1)*bufferSize+1:end);
+%         yvec_C3 = filt(temp);
+        yvec_C3 = filter(b, a,temp);
+        temp = rawC4(end-(numBuffer2Load+1)*bufferSize+1:end);
+%         yvec_C4 = filt(temp);
+        yvec_C4 = filter(b, a,temp);
+
+%         yvec_C2 = 10*yvec_C2;
+%         yvec_C3 = 50*yvec_C3;
+%         yvec_C4 = 100*yvec_C4;
+
+        filtBufferC1 = vertcat(yvec_C1(numRemove+1:bufferSize), ...
+            yvec_C1(bufferSize + numRemove+1:end));
+        filtBufferC2 = vertcat(yvec_C2(numRemove+1:bufferSize), ...
+            yvec_C2(bufferSize + numRemove+1:end));
+        filtBufferC3 = vertcat(yvec_C3(numRemove+1:bufferSize), ...
+            yvec_C3(bufferSize + numRemove+1:end));
+        filtBufferC4 = vertcat(yvec_C4(numRemove+1:bufferSize), ...
+            yvec_C4(bufferSize + numRemove+1:end));
+
+        addpoints(h1,tvec,filtBufferC1(numBuffer2Load*bufferSize1+1:end))    % use only the last buffer time signal
+        addpoints(h2,tvec,filtBufferC2(numBuffer2Load*bufferSize1+1:end))
+        addpoints(h3,tvec,filtBufferC3(numBuffer2Load*bufferSize1+1:end))
+        addpoints(h4,tvec,filtBufferC4(numBuffer2Load*bufferSize1+1:end))
+        filtC1 = vertcat(filtC1,filtBufferC1(numBuffer2Load*bufferSize1+1:end));
+        filtC2 = vertcat(filtC2,filtBufferC2(numBuffer2Load*bufferSize1+1:end));
+        filtC3 = vertcat(filtC3,filtBufferC3(numBuffer2Load*bufferSize1+1:end));
+        filtC4 = vertcat(filtC4,filtBufferC4(numBuffer2Load*bufferSize1+1:end));
+    end
+    
+    % move the x-axis of plot
+    if T>windowLen
+        ax1.XLim = [T-windowLen T];
+        ax2.XLim = [T-windowLen T];
+        ax3.XLim = [T-windowLen T];
+        ax4.XLim = [T-windowLen T];
+    end
+
+    % y-axis updater
+    c1 = mean(yvec_C1(end-bufferSize1+1:end));
+    c2 = mean(yvec_C2(end-bufferSize1+1:end));
+    c3 = mean(yvec_C3(end-bufferSize1+1:end));
+    c4 = mean(yvec_C4(end-bufferSize1+1:end));
+    ax1.YLim = [c1-bound c1+bound];
+    ax2.YLim = [c2-bound c2+bound];
+    ax3.YLim = [c3-bound c3+bound];
+    ax4.YLim = [c4-bound c4+bound];
+    
+    T = T + bufferTime;
+    toc;  % get toc time
+    time = vertcat(time, tvec);
+%     java.lang.Thread.sleep((ind-toc)*1000);
+    c = clock;
+    sysTime = vertcat(sysTime, c);
+    pause(T+initial_toc-toc)
+end
+
+fclose(s);
+
