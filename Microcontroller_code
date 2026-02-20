@@ -1,0 +1,346 @@
+/* 
+ * File:   main.c
+ * 
+ * 
+ */
+
+#include <p24FJ64GA002.h>
+
+// CONFIG2
+#pragma config POSCMOD = HS             // Primary Oscillator Select (HS Oscillator mode selected)
+#pragma config I2C1SEL = PRI            // I2C1 Pin Location Select (Use default SCL1/SDA1 pins)
+#pragma config IOL1WAY = ON             // IOLOCK Protection (Once IOLOCK is set, cannot be changed)
+#pragma config OSCIOFNC = OFF           // Primary Oscillator Output Function (OSC2/CLKO/RC15 functions as CLKO (FOSC/2))
+#pragma config FCKSM = CSDCMD           // Clock Switching and Monitor (Clock switching and Fail-Safe Clock Monitor are disabled)
+#pragma config FNOSC = PRI              // Oscillator Select (Primary Oscillator (XT, HS, EC))
+#pragma config SOSCSEL = SOSC           // Sec Oscillator Select (Default Secondary Oscillator (SOSC))
+#pragma config WUTSEL = LEG             // Wake-up timer Select (Legacy Wake-up Timer)
+#pragma config IESO = ON                // Internal External Switch Over Mode (IESO mode (Two-Speed Start-up) enabled)
+
+// CONFIG1
+#pragma config WDTPS = PS32768          // Watchdog Timer Postscaler (1:32,768)
+#pragma config FWPSA = PR128            // WDT Prescaler (Prescaler ratio of 1:128)
+#pragma config WINDIS = OFF             // Watchdog Timer Window (Windowed Watchdog Timer enabled; FWDTEN must be 1)
+#pragma config FWDTEN = OFF             // Watchdog Timer Enable (Watchdog Timer is disabled)
+#pragma config ICS = PGx3               // Comm Channel Select (Emulator EMUC3/EMUD3 pins are shared with PGC3/PGD3)
+#pragma config GWRP = OFF               // General Code Segment Write Protect (Writes to program memory are allowed)
+#pragma config GCP = OFF                // General Code Segment Code Protect (Code protection is disabled)
+#pragma config JTAGEN = OFF             // JTAG Port Enable (JTAG port is disabled)
+
+// #pragma config statements should precede project file includes.
+// Use project enums instead of #define for ON and OFF.
+
+
+
+/* Global variables */
+unsigned short int uart_transmit_buffer[12];
+unsigned short int adc_samples[4];
+unsigned short int adc_temp_one;
+unsigned short int adc_temp_two;
+unsigned short int adc_temp_three;
+unsigned short int adc_temp_four;
+unsigned short int adc_conv;
+unsigned short int adc_msb;
+unsigned short int adc_lsb;
+
+/* Function calls*/
+void delay (void);
+void adc_delay(void);
+void mux_delay(void);
+void special_delay (void);
+void init_uart(void);
+void putsUART (unsigned short int *tx_buffer,unsigned char len);
+void init_spi(void);
+unsigned short int adc_read(void);
+
+
+int main() {
+    
+    AD1PCFG = 0xFFFF;
+    
+    // LED control pin
+    TRISAbits.TRISA0 = 0;
+    PORTAbits.RA0 = 1;
+    delay();
+    
+    // UART control pins
+    TRISBbits.TRISB12 = 1;   // RX1 input
+    TRISBbits.TRISB11 = 0;   // TX1 output
+    delay();
+    init_uart();
+    
+    // ADC control pins
+    TRISBbits.TRISB0 = 0;   // A0 output
+    TRISBbits.TRISB1 = 0;   // A1 output
+    TRISBbits.TRISB2 = 0;   // !CS output
+    TRISBbits.TRISB3 = 0;   // R/!C output
+    TRISBbits.TRISB13 = 1;  // SDI input
+    TRISBbits.TRISB14 = 0;  // SCK output
+    TRISBbits.TRISB15 = 1;  // BUSY input
+    TRISBbits.TRISB4 = 0;  // WR output
+   // TRISBbits.TRISB8 = 0;  // SDO output
+    delay();
+    
+    PORTBbits.RB0 = 0;
+    PORTBbits.RB1 = 0;
+    PORTBbits.RB2 = 0;
+    PORTBbits.RB3 = 0;
+    PORTBbits.RB4 = 1;
+    
+       init_spi();
+
+    
+    uart_transmit_buffer[0] = 85;
+    uart_transmit_buffer[1] = 83;
+    uart_transmit_buffer[2] = 66;
+    uart_transmit_buffer[3] = 67;
+    uart_transmit_buffer[4] = 68;
+    uart_transmit_buffer[5] = 69;
+    uart_transmit_buffer[6] = 70;
+    uart_transmit_buffer[7] = 71;
+    uart_transmit_buffer[8] = 72;
+    uart_transmit_buffer[9] = 73;
+    uart_transmit_buffer[10] = 74;
+    uart_transmit_buffer[11] = 75;
+    
+    while(1)
+    {
+        PORTBbits.RB0 = 0;
+        delay();
+        PORTBbits.RB1 = 0;
+        PORTBbits.RB4 = 0;
+        PORTBbits.RB4 = 1;
+        mux_delay();
+        adc_temp_one = adc_read();
+        PORTBbits.RB0 = 1;
+        delay();
+        PORTBbits.RB1 = 0;
+        PORTBbits.RB4 = 0;
+        PORTBbits.RB4 = 1;
+        mux_delay();
+        adc_temp_two = adc_read();
+        PORTBbits.RB0 = 0;
+        delay();
+        PORTBbits.RB1 = 1;
+        PORTBbits.RB4 = 0;
+        PORTBbits.RB4 = 1;
+        mux_delay();
+        adc_temp_three = adc_read();
+        PORTBbits.RB0 = 1;
+        delay();
+        PORTBbits.RB1 = 1;
+        PORTBbits.RB4 = 0;
+        PORTBbits.RB4 = 1;
+        mux_delay();
+        adc_temp_four = adc_read();
+        
+        // Build transmit vector
+        
+        
+        adc_msb = adc_temp_one;
+        adc_msb = adc_msb>>8;
+        adc_msb = (adc_msb & 0x00FF);
+        adc_lsb = adc_temp_one;
+        adc_lsb = (adc_lsb & 0x00FF);
+        uart_transmit_buffer[3] = adc_msb;
+        uart_transmit_buffer[4] = adc_lsb;
+        adc_msb = adc_temp_two;
+        adc_msb = adc_msb>>8;
+        adc_msb = (adc_msb & 0x00FF);
+        adc_lsb = adc_temp_two;
+        adc_lsb = (adc_lsb & 0x00FF);
+        uart_transmit_buffer[5] = adc_msb;
+        uart_transmit_buffer[6] = adc_lsb;
+        adc_msb = adc_temp_three;
+        adc_msb = adc_msb>>8;
+        adc_msb = (adc_msb & 0x00FF);
+        adc_lsb = adc_temp_three;
+        adc_lsb = (adc_lsb & 0x00FF);
+        uart_transmit_buffer[7] = adc_msb;
+        uart_transmit_buffer[8] = adc_lsb;
+        adc_msb = adc_temp_four;
+        adc_msb = adc_msb>>8;
+        adc_msb = (adc_msb & 0x00FF);
+        adc_lsb = adc_temp_four;
+        adc_lsb = (adc_lsb & 0x00FF);
+        uart_transmit_buffer[9] = adc_msb;
+        uart_transmit_buffer[10] = adc_lsb;
+        
+        U1STAbits.UTXEN = 1;
+        delay();
+        delay();
+        putsUART(uart_transmit_buffer,12);
+        //mux_delay();
+        //mux_delay();
+        U1STAbits.UTXEN = 0;
+ 
+        
+    }
+
+    return 0;
+}
+
+void delay(void)
+{
+    unsigned char i;
+    for (i=0;i<20;i++);
+}
+
+void adc_delay(void)
+{
+    while(0);
+    while(0);
+}
+
+void mux_delay(void)
+{
+    unsigned char i;
+    for (i=0;i<200;i++);
+}
+
+void special_delay(void)
+{
+    unsigned short int i;
+    for (i=0;i<5000;i++);
+}  
+
+void init_uart(void)
+{
+    // Set U1RX pin
+    RPINR18bits.U1RXR4 = 0;  // RX1 pin RP12
+    RPINR18bits.U1RXR3 = 1;
+    RPINR18bits.U1RXR2 = 1;
+    RPINR18bits.U1RXR1 = 0;
+    RPINR18bits.U1RXR0 = 0;
+    
+    // Set U1TX pin
+    RPOR5bits.RP11R4 = 0;  // TX1 pin RP11
+    RPOR5bits.RP11R3 = 0;
+    RPOR5bits.RP11R2 = 0;
+    RPOR5bits.RP11R1 = 1;
+    RPOR5bits.RP11R0 = 1;
+            
+    U1MODE = 0x8008;
+    U1STA = 0x0400;
+    
+    U1BRG = 8;  // 25 - 38400; 8 - 115200
+}
+
+void putsUART (unsigned short int *tx_buffer,unsigned char len)
+{
+    unsigned char i = 0;
+    while (i<len)
+    {
+        while(!U1STAbits.TRMT);
+        U1TXREG = *tx_buffer++;
+        i++;
+    }
+}
+
+void init_spi(void)
+{
+    /* SPI 1 SETUP MASTER */
+	RPINR20bits.SDI1R4 = 0; /* SDI pin n.º R13 */ 
+	RPINR20bits.SDI1R3 = 1;
+	RPINR20bits.SDI1R2 = 1;
+	RPINR20bits.SDI1R1 = 0;
+	RPINR20bits.SDI1R0 = 1;
+
+/*	
+    RPOR7bits.RP15R4 = 0; //SDO pin n.º R15 
+	RPOR7bits.RP15R3 = 0; 
+	RPOR7bits.RP15R2 = 1; 
+	RPOR7bits.RP15R1 = 1; 
+	RPOR7bits.RP15R0 = 1; 
+*/
+
+	RPOR7bits.RP14R4 = 0; /* SCK pin n.º R14*/
+	RPOR7bits.RP14R3 = 1;
+	RPOR7bits.RP14R2 = 0;
+	RPOR7bits.RP14R1 = 0;
+	RPOR7bits.RP14R0 = 0;
+
+	SPI1CON1bits.DISSCK = 0;
+	SPI1CON1bits.DISSDO = 1;
+	SPI1CON1bits.MODE16 = 1;
+	SPI1CON1bits.SMP = 0;
+	SPI1CON1bits.CKE = 1;
+	SPI1CON1bits.SSEN = 0;
+	SPI1CON1bits.CKP = 1;
+	SPI1CON1bits.MSTEN = 1;
+	SPI1CON1bits.SPRE2 = 1;
+	SPI1CON1bits.SPRE1 = 1;
+	SPI1CON1bits.SPRE0 = 0;
+	SPI1CON1bits.PPRE1 = 1;
+	SPI1CON1bits.PPRE0 = 1;
+	SPI1STATbits.SPIEN = 1;
+    
+}
+
+unsigned short int adc_read(void)
+{
+    
+    unsigned short int result;
+    
+    unsigned short int tmpc = 0;
+	PORTBbits.RB3 = 0; /* R\!C 1 goes LOW */
+    adc_delay();
+	PORTBbits.RB2 = 0; /* !CS 1 goes LOW */
+	//tiny_delay();
+        while ((PORTBbits.RB15 == 1) && (tmpc < 8000)){
+          tmpc += 1;
+        }
+	PORTBbits.RB2 = 1; /* !CS 1 goes HIGH */		
+        tmpc = 0;
+        while ((PORTBbits.RB15 == 0) && (tmpc < 8000)){
+          tmpc += 1;
+        }
+	PORTBbits.RB3 = 1; /* R\!C 1 goes HIGH */
+    adc_delay();
+	PORTBbits.RB2 = 0; /* !CS 1 goes LOW */
+	SPI1BUF=0xF00F;
+    adc_delay();
+    adc_delay();
+	while(!SPI1STATbits.SPIRBF);
+	result=SPI1BUF;
+	adc_delay();
+	PORTBbits.RB2 = 1; /* !CS 1 goes HIGH */
+	//adc_delay();
+	//adc_delay();
+
+    return result;
+
+}
+//
+//unsigned short int adc_read(void)
+//{
+//    
+//    unsigned short int result;
+//    
+//	adc_delay();
+//	PORTBbits.RB3 = 0; /* R\!C 1 goes LOW */
+//	adc_delay();
+//	adc_delay();
+//	PORTBbits.RB2 = 0; /* !CS 1 goes LOW */
+//	adc_delay();
+//	PORTBbits.RB2 = 1; /* !CS 1 goes HIGH */			
+//	adc_delay();
+//	adc_delay();
+//	PORTBbits.RB3 = 1; /* R\!C 1 goes HIGH */
+//	adc_delay();
+//    adc_delay();
+//    adc_delay();
+//	PORTBbits.RB2 = 0; /* !CS 1 goes LOW */
+//	adc_delay();
+//    adc_delay();
+//	SPI1BUF=0xF00F;
+//	while(!SPI1STATbits.SPIRBF);
+//	result=SPI1BUF;
+//	adc_delay();
+//	PORTBbits.RB2 = 1; /* !CS 1 goes HIGH */
+//	adc_delay();
+//	adc_delay();
+//
+//    return result;
+//
+//}
