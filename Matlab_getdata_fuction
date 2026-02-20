@@ -1,0 +1,49 @@
+function [A0, A1, A2, A3] = get_data(in)
+
+A0 = [];
+A1 = [];
+A2 = [];
+A3 = [];
+
+ind = [];
+
+for i=1:length(in)-12  %%find all data start point
+    if (in(i)==85)&&(in(i+1)==83)&&(in(i+2)==66)  %% all 3 exists in order
+        ind = [ind; i+3]; %% ind is the start point of data without headers.
+    end
+end
+
+for i=1:length(ind)
+    A0 = [A0; in(ind(i))*256 + in(ind(i)+1)]; %% hex = MSB*2^8+ LSB (decimal)
+    A1 = [A1; in(ind(i)+2)*256 + in(ind(i)+3)];
+    A2 = [A2; in(ind(i)+4)*256 + in(ind(i)+5)];
+    A3 = [A3; in(ind(i)+6)*256 + in(ind(i)+7)];
+end
+
+A0 = A0*(20/(2^16)) - 10;
+A1 = A1*(20/(2^16)) - 10;
+A2 = A2*(20/(2^16)) - 10;
+A3 = A3*(20/(2^16)) - 10;
+
+
+% A0 = A0*(2.5/(2^16)) - 5;
+% A1 = A1*(2.5/(2^16)) - 5;
+% A2 = A2*(2.5/(2^16)) - 5;
+% A3 = A3*(2.5/(2^16)) - 5;
+% % % 
+% % % A0 = A0/5.4; 
+% % % A1 = A1/5.4; 
+% % % A2 = A2/5.4; 
+% % % A3 = A3/5.4; 
+
+% 
+% A0 = A0/5.4; 
+% A1 = A1/5.4; 
+% A2 = A2/5.4; 
+% A3 = A3/5.4; 
+%     
+    
+    
+    
+    
+
